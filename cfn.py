@@ -1,6 +1,5 @@
 # Create an application stack in Terraform consisting of an ELB and ASG. 
 # The stack should setup 
-# * ASG scaling alarms, 
 # * cloudwatch ELB unhealthy host alarms, 
 # * IAM role & policy, 
 # * ELB logs 
@@ -10,35 +9,6 @@
 # Please put your solution to Q10 in a public GitHub repo and share
 # the link.
 
-# "ScaleUpPolicy" : {
-#    "Type" : "AWS::AutoScaling::ScalingPolicy",
-#    "Properties" : {
-#       "AdjustmentType" : "ChangeInCapacity",
-#       "AutoScalingGroupName" : { "Ref" : "asGroup" },
-#       "Cooldown" : "1",
-#       "ScalingAdjustment" : "1"
-#    }
-# },
-# "CPUAlarmHigh": {
-#    "Type": "AWS::CloudWatch::Alarm",
-#    "Properties": {
-#       "EvaluationPeriods": "1",
-#       "Statistic": "Average",
-#       "Threshold": "10",
-#       "AlarmDescription": "Alarm if CPU too high or metric disappears indicating instance is down",
-#       "Period": "60",
-#       "AlarmActions": [ { "Ref": "ScaleUpPolicy" } ],
-#       "Namespace": "AWS/EC2",
-#       "Dimensions": [ {
-#          "Name": "AutoScalingGroupName",
-#          "Value": { "Ref": "asGroup" }
-#       } ],
-#       "ComparisonOperator": "GreaterThanThreshold",
-#       "MetricName": "CPUUtilization"
-#    }
-# }
-
-
 image_id ='ami-000000'
 instance_type = 't3.micro'
 vpc_id = 'vpc-000000'
@@ -46,12 +16,14 @@ subnet_ids = ['subnet-000000', 'subnet-000001', 'subnet-000002']
 autoscaling_min = 1
 autoscaling_max = 3
 autoscaling_desired = 1
+certificate_arn = 'arn:::::000000'
 
 from troposphere import Ref, Tags, Template
 from troposphere.autoscaling import AutoScalingGroup, LaunchConfiguration, Metadata, ScalingPolicy
 from troposphere.cloudwatch import Alarm, MetricDimension
 from troposphere.ec2 import SecurityGroup, SecurityGroupIngress
 from troposphere.ec2 import Subnet, VPC
+from troposphere.elasticloadbalancingv2 import LoadBalancer, TargetGroup, Listener, Action, Certificate, LoadBalancerAttributes, RedirectConfig
 
 # Set up the base template
 template = Template()
@@ -129,5 +101,39 @@ cloudwatch_cpu_low_alarm=Alarm(
 )
 template.add_resource(cloudwatch_cpu_high_alarm)
 template.add_resource(cloudwatch_cpu_low_alarm)
+
+# Create Load Balancer - need ref to sg's here
+load_balancer = LoadBalancer(
+    "exampleloadbalancer",
+    Subnets=subnet_ids
+)
+template.add_resource(load_balancer)
+target_group=TargetGroup(
+    "exampletargetgroup",
+    VpcId=vpc_id,
+    Port='80',
+    Protocol='HTTP'
+)
+listener = Listener(
+    "examplelistener",
+    LoadBalancerArn=Ref(load_balancer),
+    Port='443',
+    Protocol='HTTPS',
+    Certificates=[
+        Certificate(
+            CertificateArn=certificate_arn
+        )
+    ],
+    DefaultActions=[
+        Action(
+            Type='forward',
+            TargetGroupArn=Ref(
+                target_group)
+        )
+    ],
+    SslPolicy="ELBSecurityPolicy-TLS-1-2-Ext-2018-06"
+)
+template.add_resource(target_group)
+template.add_resource(listener)
 
 print(template.to_yaml())
