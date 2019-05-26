@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: A simple load balanced application
+Resources:
+  AutoscaleGroup:
+    Properties:
+      DesiredCapacity: 1
+      LaunchConfigurationName: !Ref 'LaunchConfig'
+      MaxSize: 3
+      MinSize: 1
+      VPCZoneIdentifier:
+        - subnet-000000
+        - subnet-000001
+        - subnet-000002
+    Type: AWS::AutoScaling::AutoScalingGroup
+  CPUHighAlarm:
+    Properties:
+      AlarmActions:
+        - !Ref 'ScaleDownPolicy'
+      AlarmDescription: Alarm if CPU > 70%
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: AutoScaleGroup
+          Value: !Ref 'AutoscaleGroup'
+      EvaluationPeriods: '2'
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Period: '60'
+      Statistic: Average
+      Threshold: '70'
+    Type: AWS::CloudWatch::Alarm
+  CPULowAlarm:
+    Properties:
+      AlarmActions:
+        - !Ref 'ScaleDownPolicy'
+      AlarmDescription: Alarm if CPU < 30%
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: AutoScaleGroup
+          Value: !Ref 'AutoscaleGroup'
+      EvaluationPeriods: '5'
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Period: '60'
+      Statistic: Average
+      Threshold: '30'
+    Type: AWS::CloudWatch::Alarm
+  LaunchConfig:
+    Properties:
+      ImageId: ami-000000
+      InstanceType: t3.micro
+    Type: AWS::AutoScaling::LaunchConfiguration
+  ScaleDownPolicy:
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'AutoscaleGroup'
+      Cooldown: '300'
+      ScalingAdjustment: '1'
+    Type: AWS::AutoScaling::ScalingPolicy
+  ScaleUpPolicy:
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'AutoscaleGroup'
+      Cooldown: '120'
+      ScalingAdjustment: '1'
+    Type: AWS::AutoScaling::ScalingPolicy
+  examplelistener:
+    Properties:
+      Certificates:
+        - CertificateArn: arn:::::000000
+      DefaultActions:
+        - TargetGroupArn: !Ref 'exampletargetgroup'
+          Type: forward
+      LoadBalancerArn: !Ref 'exampleloadbalancer'
+      Port: '443'
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS-1-2-Ext-2018-06
+    Type: AWS::ElasticLoadBalancingV2::Listener
+  exampleloadbalancer:
+    Properties:
+      Subnets:
+        - subnet-000000
+        - subnet-000001
+        - subnet-000002
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  exampletargetgroup:
+    Properties:
+      Port: '80'
+      Protocol: HTTP
+      VpcId: vpc-000000
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+
