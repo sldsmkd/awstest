@@ -75,7 +75,7 @@ template.add_resource(example_instance_profile)
 
 alb_security_group=SecurityGroup(
     "albsecuritygroupingress",
-    GroupDescription="Allow inbound HTTP/HTTPS from Graze",
+    GroupDescription="ALB HTTPS Ingress",
     VpcId=Ref(vpc_id),
     SecurityGroupIngress=[
         SecurityGroupIngress(
@@ -89,14 +89,14 @@ alb_security_group=SecurityGroup(
 )
 ec2_security_group=SecurityGroup(
     "ec2securitygroupingress",
-    GroupDescription="Allow inbound HTTP/HTTPS from Graze",
+    GroupDescription="Allow inbound TCP from the ALB",
     VpcId=Ref(vpc_id),
     SecurityGroupIngress=[
         SecurityGroupIngress(
             "albsecuritygroupingress",
             IpProtocol="tcp",
-            FromPort="443",
-            ToPort="443",
+            FromPort="0",
+            ToPort="65535",
             SourceSecurityGroupId=Ref(alb_security_group)
         )
     ],
@@ -104,6 +104,89 @@ ec2_security_group=SecurityGroup(
 )
 template.add_resource(alb_security_group)
 template.add_resource(ec2_security_group)
+
+logs_bucket=Bucket(
+    "LogsBucket",
+    DeletionPolicy="Retain"
+)
+logs_bucket_policy=BucketPolicy(
+    "LogsBucketPolicy",
+    Bucket=Ref(logs_bucket),
+    PolicyDocument={
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "Stmt1429136633762",
+                "Action": [
+                    "s3:PutObject"
+                ],
+                "Effect": "Allow",
+                "Resource": Join("", 
+                    [
+                        's3:::',
+                        Ref(logs_bucket),
+                        "/alb/*"
+                    ]
+                ),
+                "Principal": {
+                    "AWS": Ref("AWS::AccountId")
+                }
+            }
+        ]
+    }
+)
+template.add_resource(logs_bucket)
+template.add_resource(logs_bucket_policy)
+
+# Create Application Load Balancer
+load_balancer = LoadBalancer(
+    "exampleloadbalancer",
+    Subnets=subnet_ids,
+    LoadBalancerAttributes=[
+        LoadBalancerAttributes(
+                Key="access_logs.s3.enabled",
+                Value="true"
+        ),
+        LoadBalancerAttributes(
+                Key="access_logs.s3.bucket",
+                Value="true"
+        ),
+        LoadBalancerAttributes(
+                Key="access_logs.s3.prefix",
+                Value="alb"
+        )
+    ],
+    SecurityGroups=[Ref(alb_security_group)],
+    DependsOn=Ref(logs_bucket_policy)
+)
+template.add_resource(load_balancer)
+target_group=TargetGroup(
+    "exampletargetgroup",
+    VpcId=vpc_id,
+    HealthCheckPath='/',
+    Port='80',
+    Protocol='HTTP'
+)
+listener = Listener(
+    "examplelistener",
+    LoadBalancerArn=Ref(load_balancer),
+    Port='443',
+    Protocol='HTTPS',
+    Certificates=[
+        Certificate(
+            CertificateArn=certificate_arn
+        )
+    ],
+    DefaultActions=[
+        Action(
+            Type='forward',
+            TargetGroupArn=Ref(target_group)
+        )
+    ],
+    SslPolicy="ELBSecurityPolicy-TLS-1-2-Ext-2018-06"
+)
+template.add_resource(target_group)
+template.add_resource(listener)
 
 # Setup the ASG & launch config
 launch_config = LaunchConfiguration(
@@ -119,6 +202,9 @@ auto_scale_group = AutoScalingGroup(
         MaxSize=autoscaling_max,
         DesiredCapacity=autoscaling_desired,
         LaunchConfigurationName=Ref(launch_config),
+        TargetGroupARNs=[
+            GetAtt(target_group, "LoadBalancerArns")
+        ],
         VPCZoneIdentifier=subnet_ids
 )
 template.add_resource(launch_config)
@@ -178,95 +264,12 @@ cloudwatch_cpu_low_alarm=Alarm(
 template.add_resource(cloudwatch_cpu_high_alarm)
 template.add_resource(cloudwatch_cpu_low_alarm)
 
-logs_bucket=Bucket(
-    "LogsBucket",
-    DeletionPolicy="Retain"
-)
-logs_bucket_policy=BucketPolicy(
-    "LogsBucketPolicy",
-    Bucket=Ref(logs_bucket),
-    PolicyDocument={
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": "Stmt1429136633762",
-                "Action": [
-                    "s3:PutObject"
-                ],
-                "Effect": "Allow",
-                "Resource": Join("", 
-                    [
-                        's3:::',
-                        Ref(logs_bucket),
-                        "/alb/*"
-                    ]
-                ),
-                "Principal": {
-                    "AWS": Ref("AWS::AccountId")
-                }
-            }
-        ]
-    }
-)
-template.add_resource(logs_bucket)
-template.add_resource(logs_bucket_policy)
-
-# Create Load Balancer - need ref to sg's here
-load_balancer = LoadBalancer(
-    "exampleloadbalancer",
-    Subnets=subnet_ids,
-    LoadBalancerAttributes=[
-        LoadBalancerAttributes(
-                Key="access_logs.s3.enabled",
-                Value="true"
-        ),
-        LoadBalancerAttributes(
-                Key="access_logs.s3.bucket",
-                Value="true"
-        ),
-        LoadBalancerAttributes(
-                Key="access_logs.s3.prefix",
-                Value="alb"
-        )
-    ],
-    SecurityGroups=[Ref(alb_security_group)],
-    DependsOn=Ref(logs_bucket_policy)
-)
-template.add_resource(load_balancer)
-target_group=TargetGroup(
-    "exampletargetgroup",
-    VpcId=vpc_id,
-    Port='80',
-    Protocol='HTTP'
-)
-listener = Listener(
-    "examplelistener",
-    LoadBalancerArn=Ref(load_balancer),
-    Port='443',
-    Protocol='HTTPS',
-    Certificates=[
-        Certificate(
-            CertificateArn=certificate_arn
-        )
-    ],
-    DefaultActions=[
-        Action(
-            Type='forward',
-            TargetGroupArn=Ref(
-                target_group)
-        )
-    ],
-    SslPolicy="ELBSecurityPolicy-TLS-1-2-Ext-2018-06"
-)
-template.add_resource(target_group)
-template.add_resource(listener)
-
 # add a cloudwatch alarm and trigger on > 1 unhealthy hosts in the load balancer
 cloudwatch_loadbalancer_hosts=Alarm(
     "UnhealthyHosts",
     EvaluationPeriods="2",
     Statistic="Minimum",
-    Threshold="0",
+    Threshold="1",
     Period="120",
     AlarmDescription="Alarm if Unhealthy Hosts > 1",
     Namespace="AWS/ApplicationELB",
