@@ -86,6 +86,8 @@ Resources:
       IamInstanceProfile: !Ref 'ExampleInstanceProfile'
       ImageId: ami-000000
       InstanceType: t3.micro
+      SecurityGroups:
+        - !Ref 'ec2securitygroupingress'
     Type: AWS::AutoScaling::LaunchConfiguration
   LogsBucket:
     DeletionPolicy: Retain
@@ -138,6 +140,31 @@ Resources:
       Statistic: Minimum
       Threshold: '0'
     Type: AWS::CloudWatch::Alarm
+  albsecuritygroupingress:
+    Properties:
+      GroupDescription: Allow inbound HTTP/HTTPS from Graze
+      SecurityGroupIngress:
+        - Properties:
+            CidrIp: '0.0.0.0/0'
+            FromPort: '443'
+            IpProtocol: tcp
+            ToPort: '443'
+          Type: AWS::EC2::SecurityGroupIngress
+      VpcId: !Ref 'vpc-000000'
+    Type: AWS::EC2::SecurityGroup
+  ec2securitygroupingress:
+    DependsOn: !Ref 'albsecuritygroupingress'
+    Properties:
+      GroupDescription: Allow inbound HTTP/HTTPS from Graze
+      SecurityGroupIngress:
+        - Properties:
+            FromPort: '443'
+            IpProtocol: tcp
+            SourceSecurityGroupId: !Ref 'albsecuritygroupingress'
+            ToPort: '443'
+          Type: AWS::EC2::SecurityGroupIngress
+      VpcId: !Ref 'vpc-000000'
+    Type: AWS::EC2::SecurityGroup
   examplelistener:
     Properties:
       Certificates:
@@ -160,6 +187,8 @@ Resources:
           Value: 'true'
         - Key: access_logs.s3.prefix
           Value: alb
+      SecurityGroups:
+        - !Ref 'albsecuritygroupingress'
       Subnets:
         - subnet-000000
         - subnet-000001

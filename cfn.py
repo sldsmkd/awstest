@@ -73,12 +73,45 @@ template.add_resource(example_role)
 template.add_resource(example_policy)
 template.add_resource(example_instance_profile)
 
+alb_security_group=SecurityGroup(
+    "albsecuritygroupingress",
+    GroupDescription="Allow inbound HTTP/HTTPS from Graze",
+    VpcId=Ref(vpc_id),
+    SecurityGroupIngress=[
+        SecurityGroupIngress(
+            "albsecuritygroupingress",
+            CidrIp="0.0.0.0/0",
+            IpProtocol="tcp",
+            FromPort="443",
+            ToPort="443"
+        )
+    ]
+)
+ec2_security_group=SecurityGroup(
+    "ec2securitygroupingress",
+    GroupDescription="Allow inbound HTTP/HTTPS from Graze",
+    VpcId=Ref(vpc_id),
+    SecurityGroupIngress=[
+        SecurityGroupIngress(
+            "albsecuritygroupingress",
+            IpProtocol="tcp",
+            FromPort="443",
+            ToPort="443",
+            SourceSecurityGroupId=Ref(alb_security_group)
+        )
+    ],
+    DependsOn=Ref(alb_security_group)
+)
+template.add_resource(alb_security_group)
+template.add_resource(ec2_security_group)
+
 # Setup the ASG & launch config
 launch_config = LaunchConfiguration(
     "LaunchConfig",
     ImageId=image_id,
     IamInstanceProfile=Ref(example_instance_profile),
-    InstanceType=instance_type
+    InstanceType=instance_type,
+    SecurityGroups=[Ref(ec2_security_group)]
 )
 auto_scale_group = AutoScalingGroup(
         "AutoscaleGroup",
@@ -196,6 +229,7 @@ load_balancer = LoadBalancer(
                 Value="alb"
         )
     ],
+    SecurityGroups=[Ref(alb_security_group)],
     DependsOn=Ref(logs_bucket_policy)
 )
 template.add_resource(load_balancer)
