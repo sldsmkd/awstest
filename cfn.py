@@ -18,7 +18,7 @@ autoscaling_max = 3
 autoscaling_desired = 1
 certificate_arn = 'arn:::::000000'
 
-from troposphere import Ref, Tags, Template
+from troposphere import GetAtt, Ref, Tags, Template
 from troposphere.autoscaling import AutoScalingGroup, LaunchConfiguration, Metadata, ScalingPolicy
 from troposphere.cloudwatch import Alarm, MetricDimension
 from troposphere.ec2 import SecurityGroup, SecurityGroupIngress
@@ -79,7 +79,7 @@ cloudwatch_cpu_high_alarm=Alarm(
         Name="AutoScaleGroup",
         Value=Ref(auto_scale_group)
     )],
-    AlarmActions=[Ref(scale_down_policy)],
+    AlarmActions=[Ref(scale_up_policy)],
     ComparisonOperator="LessThanThreshold",
     MetricName="CPUUtilization"
 )
@@ -101,6 +101,7 @@ cloudwatch_cpu_low_alarm=Alarm(
 )
 template.add_resource(cloudwatch_cpu_high_alarm)
 template.add_resource(cloudwatch_cpu_low_alarm)
+
 
 # Create Load Balancer - need ref to sg's here
 load_balancer = LoadBalancer(
@@ -135,5 +136,30 @@ listener = Listener(
 )
 template.add_resource(target_group)
 template.add_resource(listener)
+
+# add a cloudwatch alarm and trigger on > 1 unhealthy hosts in the load balancer
+cloudwatch_loadbalancer_hosts=Alarm(
+    "UnhealthyHosts",
+    EvaluationPeriods="2",
+    Statistic="Minimum",
+    Threshold="0",
+    Period="120",
+    AlarmDescription="Alarm if Unhealthy Hosts > 1",
+    Namespace="AWS/ApplicationELB",
+    Dimensions=[
+        MetricDimension(
+            Name="TargetGroup",
+            Value=GetAtt(target_group, 'TargetGroupFullName')
+        ),
+        MetricDimension(
+            Name="LoadBalancer",
+            Value=GetAtt(load_balancer, 'LoadBalancerFullName')
+        )        
+    ],
+    ComparisonOperator="GreaterThanThreshold",
+    MetricName="UnHealthyHostCount"
+)
+template.add_resource(cloudwatch_loadbalancer_hosts)
+
 
 print(template.to_yaml())
