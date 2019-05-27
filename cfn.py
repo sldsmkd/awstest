@@ -1,8 +1,6 @@
 # Create an application stack in Terraform consisting of an ELB and ASG. 
 # The stack should setup 
-# * cloudwatch ELB unhealthy host alarms, 
 # * IAM role & policy, 
-# * ELB logs 
 # * security groups.
 # The instance should be able to access S3. The application should
 # be a minimal application that has a status endpoint, any language.
@@ -18,12 +16,13 @@ autoscaling_max = 3
 autoscaling_desired = 1
 certificate_arn = 'arn:::::000000'
 
-from troposphere import GetAtt, Ref, Tags, Template
+from troposphere import AWSAttribute, GetAtt, Join, Ref, Tags, Template
 from troposphere.autoscaling import AutoScalingGroup, LaunchConfiguration, Metadata, ScalingPolicy
 from troposphere.cloudwatch import Alarm, MetricDimension
 from troposphere.ec2 import SecurityGroup, SecurityGroupIngress
 from troposphere.ec2 import Subnet, VPC
 from troposphere.elasticloadbalancingv2 import LoadBalancer, TargetGroup, Listener, Action, Certificate, LoadBalancerAttributes, RedirectConfig
+from troposphere.s3 import Bucket, BucketPolicy
 
 # Set up the base template
 template = Template()
@@ -102,11 +101,58 @@ cloudwatch_cpu_low_alarm=Alarm(
 template.add_resource(cloudwatch_cpu_high_alarm)
 template.add_resource(cloudwatch_cpu_low_alarm)
 
+logs_bucket=Bucket(
+    "LogsBucket",
+    DeletionPolicy="Retain"
+)
+logs_bucket_policy=BucketPolicy(
+    "LogsBucketPolicy",
+    Bucket=Ref(logs_bucket),
+    PolicyDocument={
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "Stmt1429136633762",
+                "Action": [
+                    "s3:PutObject"
+                ],
+                "Effect": "Allow",
+                "Resource": Join("", 
+                    [
+                        's3:::',
+                        Ref(logs_bucket),
+                        "/alb/*"
+                    ]
+                ),
+                "Principal": {
+                    "AWS": Ref("AWS::AccountId")
+                }
+            }
+        ]
+    }
+)
+template.add_resource(logs_bucket)
+template.add_resource(logs_bucket_policy)
 
 # Create Load Balancer - need ref to sg's here
 load_balancer = LoadBalancer(
     "exampleloadbalancer",
-    Subnets=subnet_ids
+    Subnets=subnet_ids,
+    LoadBalancerAttributes=[
+        LoadBalancerAttributes(
+                Key="access_logs.s3.enabled",
+                Value="true"
+        ),
+        LoadBalancerAttributes(
+                Key="access_logs.s3.bucket",
+                Value="true"
+        ),
+        LoadBalancerAttributes(
+                Key="access_logs.s3.prefix",
+                Value="alb"
+        )
+    ],
+    DependsOn=Ref(logs_bucket_policy)
 )
 template.add_resource(load_balancer)
 target_group=TargetGroup(
