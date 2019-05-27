@@ -1,10 +1,5 @@
-# Create an application stack in Terraform consisting of an ELB and ASG. 
-# The stack should setup  
 # * security groups.
-# The instance should be able to access S3. The application should
-# be a minimal application that has a status endpoint, any language.
-# Please put your solution to Q10 in a public GitHub repo and share
-# the link.
+
 
 image_id ='ami-000000'
 instance_type = 't3.micro'
