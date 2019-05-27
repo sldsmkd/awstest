@@ -1,6 +1,5 @@
 # Create an application stack in Terraform consisting of an ELB and ASG. 
-# The stack should setup 
-# * IAM role & policy, 
+# The stack should setup  
 # * security groups.
 # The instance should be able to access S3. The application should
 # be a minimal application that has a status endpoint, any language.
@@ -15,12 +14,14 @@ autoscaling_min = 1
 autoscaling_max = 3
 autoscaling_desired = 1
 certificate_arn = 'arn:::::000000'
+bucket_arn = 'arn:aws:s3:::example.application'
 
 from troposphere import AWSAttribute, GetAtt, Join, Ref, Tags, Template
 from troposphere.autoscaling import AutoScalingGroup, LaunchConfiguration, Metadata, ScalingPolicy
 from troposphere.cloudwatch import Alarm, MetricDimension
 from troposphere.ec2 import SecurityGroup, SecurityGroupIngress
 from troposphere.ec2 import Subnet, VPC
+from troposphere.iam import InstanceProfile, Policy, PolicyType, Role
 from troposphere.elasticloadbalancingv2 import LoadBalancer, TargetGroup, Listener, Action, Certificate, LoadBalancerAttributes, RedirectConfig
 from troposphere.s3 import Bucket, BucketPolicy
 
@@ -29,11 +30,59 @@ template = Template()
 template.description = "A simple load balanced application"
 template.version = "2010-09-09"
 
+# IAM Role and Policy for the Instance
+example_role = Role(
+    "ExampleRole",
+    RoleName="ExampleRole",
+    AssumeRolePolicyDocument= {
+        "AssumeRolePolicyDocument": {
+            "Version" : "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": [ "ec2.amazonaws.com" ]
+                },
+                "Action": [ "sts:AssumeRole" ]
+            }]
+        },
+        "Path": "/"
+    }
+)
+example_policy = PolicyType(
+    "ExamplePolicy",
+    PolicyName="ExamplePolicy",
+    PolicyDocument={
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "Stmt1429136633762",
+                "Action": [
+                "s3:ListObjects",
+                "s3:GetObject"
+                ],
+                "Effect": "Allow",
+                "Resource": [
+                    bucket_arn,
+                    bucket_arn + "/*"
+                ]
+            }
+        ]
+    },
+    Roles=[Ref(example_role)]
+)
+example_instance_profile = InstanceProfile(
+    "ExampleInstanceProfile",
+    Roles=[Ref(example_role)]
+)
+template.add_resource(example_role)
+template.add_resource(example_policy)
+template.add_resource(example_instance_profile)
 
 # Setup the ASG & launch config
 launch_config = LaunchConfiguration(
     "LaunchConfig",
     ImageId=image_id,
+    IamInstanceProfile=Ref(example_instance_profile),
     InstanceType=instance_type
 )
 auto_scale_group = AutoScalingGroup(
@@ -206,6 +255,5 @@ cloudwatch_loadbalancer_hosts=Alarm(
     MetricName="UnHealthyHostCount"
 )
 template.add_resource(cloudwatch_loadbalancer_hosts)
-
 
 print(template.to_yaml())

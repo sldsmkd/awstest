@@ -44,8 +44,46 @@ Resources:
       Statistic: Average
       Threshold: '30'
     Type: AWS::CloudWatch::Alarm
+  ExampleInstanceProfile:
+    Properties:
+      Roles:
+        - !Ref 'ExampleRole'
+    Type: AWS::IAM::InstanceProfile
+  ExamplePolicy:
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:ListObjects
+              - s3:GetObject
+            Effect: Allow
+            Resource:
+              - arn:aws:s3:::example.application
+              - arn:aws:s3:::example.application/*
+            Sid: Stmt1429136633762
+        Version: '2012-10-17'
+      PolicyName: ExamplePolicy
+      Roles:
+        - !Ref 'ExampleRole'
+    Type: AWS::IAM::Policy
+  ExampleRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        AssumeRolePolicyDocument:
+          Statement:
+            - Action:
+                - sts:AssumeRole
+              Effect: Allow
+              Principal:
+                Service:
+                  - ec2.amazonaws.com
+          Version: '2012-10-17'
+        Path: /
+      RoleName: ExampleRole
+    Type: AWS::IAM::Role
   LaunchConfig:
     Properties:
+      IamInstanceProfile: !Ref 'ExampleInstanceProfile'
       ImageId: ami-000000
       InstanceType: t3.micro
     Type: AWS::AutoScaling::LaunchConfiguration
