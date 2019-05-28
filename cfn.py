@@ -13,6 +13,7 @@ bucket_arn = 'arn:aws:s3:::example.application'
 
 from troposphere import AWSAttribute, GetAtt, Join, Ref, Tags, Template
 from troposphere.autoscaling import AutoScalingGroup, LaunchConfiguration, Metadata, ScalingPolicy
+from troposphere.cloudformation import Init, InitConfig
 from troposphere.cloudwatch import Alarm, MetricDimension
 from troposphere.ec2 import SecurityGroup, SecurityGroupIngress
 from troposphere.ec2 import Subnet, VPC
@@ -194,6 +195,17 @@ launch_config = LaunchConfiguration(
     ImageId=image_id,
     IamInstanceProfile=Ref(example_instance_profile),
     InstanceType=instance_type,
+    Metadata=Metadata(Init(
+        {
+            'config': InitConfig(
+                commands={
+                    "01_run_container": {
+                        "command": "docker run -d -p 80:8000 --name whoami -t jwilder/whoami"
+                    }
+                }
+            )
+        }
+    )),
     SecurityGroups=[Ref(ec2_security_group)]
 )
 auto_scale_group = AutoScalingGroup(

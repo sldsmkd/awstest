@@ -7,6 +7,8 @@ Resources:
       LaunchConfigurationName: !Ref 'LaunchConfig'
       MaxSize: 3
       MinSize: 1
+      TargetGroupARNs:
+        - !GetAtt 'exampletargetgroup.LoadBalancerArns'
       VPCZoneIdentifier:
         - subnet-000000
         - subnet-000001
@@ -82,6 +84,12 @@ Resources:
       RoleName: ExampleRole
     Type: AWS::IAM::Role
   LaunchConfig:
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          commands:
+            '01_run_container':
+              command: docker run -d -p 80:8000 --name whoami -t jwilder/whoami
     Properties:
       IamInstanceProfile: !Ref 'ExampleInstanceProfile'
       ImageId: ami-000000
@@ -138,11 +146,11 @@ Resources:
       Namespace: AWS/ApplicationELB
       Period: '120'
       Statistic: Minimum
-      Threshold: '0'
+      Threshold: '1'
     Type: AWS::CloudWatch::Alarm
   albsecuritygroupingress:
     Properties:
-      GroupDescription: Allow inbound HTTP/HTTPS from Graze
+      GroupDescription: ALB HTTPS Ingress
       SecurityGroupIngress:
         - Properties:
             CidrIp: '0.0.0.0/0'
@@ -155,13 +163,13 @@ Resources:
   ec2securitygroupingress:
     DependsOn: !Ref 'albsecuritygroupingress'
     Properties:
-      GroupDescription: Allow inbound HTTP/HTTPS from Graze
+      GroupDescription: Allow inbound TCP from the ALB
       SecurityGroupIngress:
         - Properties:
-            FromPort: '443'
+            FromPort: '0'
             IpProtocol: tcp
             SourceSecurityGroupId: !Ref 'albsecuritygroupingress'
-            ToPort: '443'
+            ToPort: '65535'
           Type: AWS::EC2::SecurityGroupIngress
       VpcId: !Ref 'vpc-000000'
     Type: AWS::EC2::SecurityGroup
@@ -196,6 +204,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
   exampletargetgroup:
     Properties:
+      HealthCheckPath: /
       Port: '80'
       Protocol: HTTP
       VpcId: vpc-000000
